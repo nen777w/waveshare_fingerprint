@@ -40,10 +40,13 @@ struct buffer
     uint8_t * data;
 };
 
-waveshare_fingerprint::waveshare_fingerprint(SoftwareSerial * pss, uint8_t pin_reset, uint16_t uart_wait_timeout, bool verbose)
+waveshare_fingerprint::waveshare_fingerprint(SoftwareSerial * pss, uint8_t pin_reset, uint8_t pin_wake, uint16_t uart_wait_timeout, bool verbose)
     : m_pss(pss)
     , m_pin_reset(pin_reset)
+    , m_pin_wake(pin_wake)
     , m_uart_wait_timeout(uart_wait_timeout)
+    , m_sleep(false)
+    , m_sleep_scann(false)
     , m_verbose(verbose)
 {
     
@@ -53,7 +56,11 @@ void waveshare_fingerprint::begin(long speed)
 {
     if(m_pin_reset >= 0) {
         pinMode(m_pin_reset, OUTPUT);
-        digitalWrite(m_pin_reset , HIGH);
+        digitalWrite(m_pin_reset, HIGH);
+    }
+
+    if(m_pin_wake >= 0) {
+        pinMode(m_pin_wake, INPUT);
     }
 
     m_pss->begin(speed);
@@ -64,8 +71,7 @@ void waveshare_fingerprint::reset()
     if(m_pin_reset >= 0) {
         digitalWrite(m_pin_reset , LOW);
         delay(100);
-	    digitalWrite(m_pin_reset , HIGH);
-        delay(100);
+	    unreset();
     }
 }
 
@@ -114,11 +120,38 @@ bool waveshare_fingerprint::read_response(uint8_t * respose, uint16_t response_l
     return 0xf5 == respose[0] && 0xf5 == respose[response_len-1] && crc == respose[response_len-2];
 }
 
+void waveshare_fingerprint::unreset()
+{
+    digitalWrite(m_pin_reset , HIGH);
+    delay(300);
+
+    //From this point - dirty hack, bug in falsh, hould be fixed in WAVESHARE side!!!
+    uint8_t dsp_ver_query[] = {0xf5, 0x26, 0x00, 0x00, 0x00, 0x00, 0x26, 0xf5};
+    m_pss->write(dsp_ver_query, sizeof(dsp_ver_query));
+    m_pss->flush();
+    while(m_pss->available()) {
+        m_pss->read();
+    }
+    for(uint8_t n = 0; n < 8;)
+    {
+        if(m_pss->available()) 
+        {
+            m_pss->read();
+            ++n;
+        }
+        else
+        {
+            delay(1);
+        }
+    }
+}
+
 bool waveshare_fingerprint::sleep()
 {
     uint8_t response[8] = {0};
     send_command(CMD_SLEEP, 0, 0, 0);
-    return read_response(response, sizeof(response));
+    m_sleep = read_response(response, sizeof(response));
+    return m_sleep;
 }
 
 waveshare_fingerprint::EFPErrors waveshare_fingerprint::allow_overwrite(bool b)
@@ -209,6 +242,39 @@ waveshare_fingerprint::EFPErrors waveshare_fingerprint::scan_1_to_N(uint16_t *sl
     }
 
     return read_success ? ACK_SUCCESS : ACK_FAIL;
+}
+
+bool waveshare_fingerprint::begin_sleep_scan()
+{
+    if(m_sleep || -1 == m_pin_reset || -1 == m_pin_wake) return false;
+    digitalWrite(m_pin_reset, LOW);
+    m_sleep_scann = true;
+}
+
+waveshare_fingerprint::EFPErrors waveshare_fingerprint::sleep_1_to_N_scan(uint16_t * slot, bool stay_in_sleep)
+{
+    if(HIGH == digitalRead(m_pin_wake))
+    {
+        unreset();
+        waveshare_fingerprint::EFPErrors err = scan_1_to_N(slot);
+        if(!stay_in_sleep) 
+        {
+            m_sleep_scann = false;
+            return err;
+        } 
+        else 
+        {
+            digitalWrite(m_pin_reset, LOW);
+        }        
+    }
+
+    return ACK_NO_TOUCH;
+}
+
+void waveshare_fingerprint::end_sleep_scan()
+{
+    unreset();
+    m_sleep_scann = false;
 }
 
 waveshare_fingerprint::EFPErrors waveshare_fingerprint::permission(uint16_t slot, uint8_t * permission)
