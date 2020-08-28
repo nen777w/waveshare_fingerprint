@@ -1,7 +1,14 @@
 #ifndef __waveshare_fingerprint_h__
 #define __waveshare_fingerprint_h__
 
-#include <SoftwareSerial.h>
+#if defined(WAVESHARE_FP_USE_HW_SERIAL)
+	#include <HardwareSerial.h>
+	typedef HardwareSerial	Serial_t;
+#else
+	#include <SoftwareSerial.h>
+	typedef SoftwareSerial	Serial_t;
+#endif
+
 
 class waveshare_fingerprint
 {
@@ -18,7 +25,7 @@ public:
 	};
 
 public:
-	waveshare_fingerprint(SoftwareSerial * pss, uint8_t pin_reset = -1, uint8_t pin_wake = -1, uint16_t uart_wait_timeout = 3000, bool verbose = false);
+	waveshare_fingerprint(Serial_t * pss, uint8_t pin_reset = -1, uint8_t pin_wake = -1, uint16_t uart_wait_timeout = 3000, bool verbose = false);
 
 	void begin(long speed = 19200);
 	void reset();
@@ -61,7 +68,7 @@ private:
 	void unreset();
 
 private:
-	SoftwareSerial * m_pss;
+	Serial_t * m_pss;
 	uint8_t m_pin_reset, m_pin_wake;
 	const uint16_t m_uart_wait_timeout;
 	bool m_sleep, m_sleep_scann;

@@ -40,7 +40,7 @@ struct buffer
     uint8_t * data;
 };
 
-waveshare_fingerprint::waveshare_fingerprint(SoftwareSerial * pss, uint8_t pin_reset, uint8_t pin_wake, uint16_t uart_wait_timeout, bool verbose)
+waveshare_fingerprint::waveshare_fingerprint(Serial_t * pss, uint8_t pin_reset, uint8_t pin_wake, uint16_t uart_wait_timeout, bool verbose)
     : m_pss(pss)
     , m_pin_reset(pin_reset)
     , m_pin_wake(pin_wake)
@@ -125,7 +125,8 @@ void waveshare_fingerprint::unreset()
     digitalWrite(m_pin_reset , HIGH);
     delay(300);
 
-    //From this point - dirty hack, bug in falsh, hould be fixed in WAVESHARE side!!!
+    //From this point - dirty hack, bug in module, should be fixed in WAVESHARE side!!!
+    //Remove this code at the end of the function, if new firmware version will available.
     uint8_t dsp_ver_query[] = {0xf5, 0x26, 0x00, 0x00, 0x00, 0x00, 0x26, 0xf5};
     m_pss->write(dsp_ver_query, sizeof(dsp_ver_query));
     m_pss->flush();
