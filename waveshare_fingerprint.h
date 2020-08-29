@@ -24,8 +24,17 @@ public:
 		, 	ACK_NO_TOUCH = 0x09 // Special return code for sleep scanning
 	};
 
+	typedef void(*uart_wait_ping_timeout_func_t)(void *);
+	typedef void(*verbose_func_t)(const char *);
+
 public:
-	waveshare_fingerprint(Serial_t * pss, uint8_t pin_reset = -1, uint8_t pin_wake = -1, uint16_t uart_wait_timeout = 3000, bool verbose = false);
+	waveshare_fingerprint(Serial_t * pss
+		, uint8_t pin_reset = -1, uint8_t pin_wake = -1
+		, uint16_t uart_wait_timeout = 3000
+		, uint16_t reset_timeout = 600
+		, uint16_t uart_waut_ping_timeout = 0, uart_wait_ping_timeout_func_t uart_wait_ping_timeout_func = nullptr, void * extra = nullptr
+		, verbose_func_t verbose_func = nullptr
+	);
 
 	void begin(long speed = 19200);
 	void reset();
@@ -71,8 +80,12 @@ private:
 	Serial_t * m_pss;
 	uint8_t m_pin_reset, m_pin_wake;
 	const uint16_t m_uart_wait_timeout;
+	const uint16_t m_reset_timeout;
+	const uint16_t m_uart_waut_ping_timeout;
+	uart_wait_ping_timeout_func_t m_uart_wait_ping_timeout_func;
+	void * m_extra;
 	bool m_sleep, m_sleep_scann;
-	bool m_verbose;
+	verbose_func_t m_verbose_func;
 };
 
 #endif

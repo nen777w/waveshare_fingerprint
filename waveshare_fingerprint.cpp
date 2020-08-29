@@ -40,14 +40,23 @@ struct buffer
     uint8_t * data;
 };
 
-waveshare_fingerprint::waveshare_fingerprint(Serial_t * pss, uint8_t pin_reset, uint8_t pin_wake, uint16_t uart_wait_timeout, bool verbose)
+waveshare_fingerprint::waveshare_fingerprint( Serial_t * pss
+                                            , uint8_t pin_reset, uint8_t pin_wake
+                                            , uint16_t uart_wait_timeout
+                                            , uint16_t reset_timeout
+                                            , uint16_t uart_waut_ping_timeout, uart_wait_ping_timeout_func_t uart_wait_ping_timeout_func, void * extra
+                                            , verbose_func_t verbose_func)
     : m_pss(pss)
     , m_pin_reset(pin_reset)
     , m_pin_wake(pin_wake)
     , m_uart_wait_timeout(uart_wait_timeout)
+    , m_reset_timeout(reset_timeout)
+    , m_uart_waut_ping_timeout(uart_waut_ping_timeout)
+    , m_uart_wait_ping_timeout_func(uart_wait_ping_timeout_func)
+    , m_extra(extra)
     , m_sleep(false)
     , m_sleep_scann(false)
-    , m_verbose(verbose)
+    , m_verbose_func(verbose_func)
 {
     
 }
@@ -78,10 +87,11 @@ void waveshare_fingerprint::reset()
 void waveshare_fingerprint::send_command(uint8_t cmd, uint8_t by_2, uint8_t by_3, uint8_t by_4)
 {
     uint8_t data[] = { 0xf5, cmd, by_2, by_3, by_4, 0, (uint8_t)((uint8_t)((uint8_t)(cmd ^ by_2) ^ by_3) ^ by_4), 0xf5 };
-    if(m_verbose) {
-        Serial.print("->");
-        for(uint8_t n = 0; n < sizeof(data); n++) { Serial.print(" 0x"); Serial.print(data[n], HEX); }
-        Serial.println();
+    if(m_verbose_func) {
+        String verbose("->");
+        for(uint8_t n = 0; n < sizeof(data); n++) { verbose += " 0x"; verbose += String(data[n], HEX); }
+        verbose += "\r\n";
+        m_verbose_func(verbose.c_str());
     }
     m_pss->write(data, sizeof(data));
     m_pss->flush();
@@ -89,32 +99,46 @@ void waveshare_fingerprint::send_command(uint8_t cmd, uint8_t by_2, uint8_t by_3
 
 bool waveshare_fingerprint::read_response(uint8_t * respose, uint16_t response_len)
 {
-    uint16_t timeout = 0;
+    uint16_t timeout = 0, wait_ping_timeout = 0;
     uint8_t idx = 0, crc = 0;
     do
     {
         if(m_pss->available()) 
         {
             respose[idx] = m_pss->read();
-            if(idx > 0 && idx < response_len-2) crc ^= respose[idx];
+            if(idx > 0 && idx < response_len-2) { crc ^= respose[idx]; }
             ++idx;
             timeout = 0;
         }
         else {
             delay(1);
             timeout++;
-            if(m_uart_wait_timeout < timeout) {
-                if(m_verbose) { Serial.println("Error: timeout."); }
+            wait_ping_timeout++;
+
+            if(0 != m_uart_waut_ping_timeout && m_uart_waut_ping_timeout < wait_ping_timeout) {
+                m_uart_wait_ping_timeout_func(m_extra);
+                wait_ping_timeout = 0;
+            }
+
+            if(m_uart_wait_timeout < timeout) 
+            {
+                if(m_verbose_func) 
+                { 
+                    String verbose("Error: timeout.\r\n");
+                    m_verbose_func(verbose.c_str());
+                }
                 return false;
             }
         }
     } 
     while (idx < response_len);
 
-    if(m_verbose) {
-        Serial.print("<-");
-        for(uint8_t n = 0; n < response_len; n++) { Serial.print(" 0x"); Serial.print(respose[n], HEX); }
-        Serial.println(0xf5 == respose[0] && 0xf5 == respose[response_len-1] && crc == respose[response_len-2] ? " - GOOD PACKET" : " - BAD PACKET");
+    if(m_verbose_func) 
+    {
+        String verbose("<-");
+        for(uint8_t n = 0; n < response_len; n++) { verbose += " 0x"; verbose += String(respose[n], HEX); }
+        0xf5 == respose[0] && 0xf5 == respose[response_len-1] && crc == respose[response_len-2] ? verbose += " - GOOD PACKET\r\n" : verbose += " - BAD PACKET\r\n";
+        m_verbose_func(verbose.c_str());
     }
     
     return 0xf5 == respose[0] && 0xf5 == respose[response_len-1] && crc == respose[response_len-2];
@@ -123,7 +147,7 @@ bool waveshare_fingerprint::read_response(uint8_t * respose, uint16_t response_l
 void waveshare_fingerprint::unreset()
 {
     digitalWrite(m_pin_reset , HIGH);
-    delay(300);
+    delay(m_reset_timeout);
 
     //From this point - dirty hack, bug in module, should be fixed in WAVESHARE side!!!
     //Remove this code at the end of the function, if new firmware version will available.
